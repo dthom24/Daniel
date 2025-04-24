@@ -1,0 +1,199 @@
+// Converted Leaflet Zoomslider Plugin to TypeScript
+// Original plugin: https://github.com/kartena/leaflet.zoomslider 
+
+import L, { Control, Map, DomUtil, DomEvent, Draggable, Point } from 'leaflet';
+
+class Knob extends Draggable {
+  private _element: HTMLElement;
+  private _stepHeight: number;
+  private _knobHeight: number;
+  private _maxValue!: number;
+  private _k!: number;
+  private _m!: number;
+
+  constructor(element: HTMLElement, stepHeight: number, knobHeight: number) {
+    super(element, element);
+    this._element = element;
+    this._stepHeight = stepHeight;
+    this._knobHeight = knobHeight;
+
+    this.on('predrag', () => {
+      this._newPos.x = 0;
+      this._newPos.y = this._adjust(this._newPos.y);
+    });
+  }
+
+  private _adjust(y: number): number {
+    let value = Math.round(this._toValue(y));
+    value = Math.max(0, Math.min(this._maxValue, value));
+    return this._toY(value);
+  }
+
+  private _toY(value: number): number {
+    return this._k * value + this._m;
+  }
+
+  private _toValue(y: number): number {
+    return (y - this._m) / this._k;
+  }
+
+  public setSteps(steps: number): void {
+    const sliderHeight = steps * this._stepHeight;
+    this._maxValue = steps - 1;
+    this._k = -this._stepHeight;
+    this._m = sliderHeight - (this._stepHeight + this._knobHeight) / 2;
+  }
+
+  public setPosition(y: number): void {
+    DomUtil.setPosition(this._element, new Point(0, this._adjust(y)));
+  }
+
+  public setValue(v: number): void {
+    this.setPosition(this._toY(v));
+  }
+
+  public getValue(): number {
+    return this._toValue(DomUtil.getPosition(this._element).y);
+  }
+}
+
+export class ZoomsliderControl extends Control {
+  options = {
+    position: 'topleft' as Control.Position,
+    stepHeight: 8,
+    knobHeight: 6,
+    styleNS: 'leaflet-control-zoomslider',
+  };
+
+  private _map!: Map;
+  private _ui: any;
+  private _knob!: Knob;
+
+  onAdd(map: Map): HTMLElement {
+    this._map = map;
+    this._ui = this._createUI();
+    this._knob = new Knob(this._ui.knob, this.options.stepHeight, this.options.knobHeight);
+
+    map.whenReady(() => {
+      this._initKnob();
+      this._initEvents();
+      this._updateSize();
+      this._updateKnobValue();
+      this._updateDisabled();
+    });
+
+    return this._ui.bar;
+  }
+
+  onRemove(map: Map): void {
+    map.off('zoomlevelschange', this._updateSize, this)
+       .off('zoomend zoomlevelschange', this._updateKnobValue, this)
+       .off('zoomend zoomlevelschange', this._updateDisabled, this);
+  }
+
+  private _createUI(): any {
+    const ns = this.options.styleNS;
+    const bar = DomUtil.create('div', `${ns} leaflet-bar`);
+    const zoomIn = this._createZoomBtn('in', 'top', bar);
+    const wrap = DomUtil.create('div', `${ns}-wrap leaflet-bar-part`, bar);
+    const zoomOut = this._createZoomBtn('out', 'bottom', bar);
+    const body = DomUtil.create('div', `${ns}-body`, wrap);
+    const knob = DomUtil.create('div', `${ns}-knob`);
+
+    DomEvent.disableClickPropagation(bar);
+    DomEvent.disableClickPropagation(knob);
+
+    return { bar, zoomIn, zoomOut, wrap, body, knob };
+  }
+
+  private _createZoomBtn(zoomDir: string, end: string, container: HTMLElement): HTMLElement {
+    const classDef = `${this.options.styleNS}-${zoomDir} leaflet-bar-part leaflet-bar-part-${end}`;
+    const link = DomUtil.create('a', classDef, container);
+    link.href = '#';
+    link.title = `Zoom ${zoomDir}`;
+    DomEvent.on(link, 'click', DomEvent.preventDefault);
+    return link;
+  }
+
+  private _initKnob(): void {
+    this._knob.enable();
+    this._ui.body.appendChild(this._ui.knob);
+  }
+
+  private _initEvents(): void {
+    this._map.on('zoomlevelschange', this._updateSize, this)
+      .on('zoomend zoomlevelschange', this._updateKnobValue, this)
+      .on('zoomend zoomlevelschange', this._updateDisabled, this);
+
+    DomEvent.on(this._ui.body, 'click', this._onSliderClick, this);
+    DomEvent.on(this._ui.zoomIn, 'click', this._zoomIn, this);
+    DomEvent.on(this._ui.zoomOut, 'click', this._zoomOut, this);
+
+    this._knob.on('dragend', this._updateMapZoom, this);
+  }
+
+  private _onSliderClick(e: MouseEvent | TouchEvent): void {
+    const first = (e as TouchEvent).touches && (e as TouchEvent).touches.length === 1
+      ? (e as TouchEvent).touches[0]
+      : (e as MouseEvent);
+    const y = DomEvent.getMousePosition(first as MouseEvent, this._ui.body).y;
+    this._knob.setPosition(y);
+    this._updateMapZoom();
+  }
+
+  private _zoomIn(e?: KeyboardEvent): void {
+    this._map.zoomIn(e?.shiftKey ? 3 : 1);
+  }
+
+  private _zoomOut(e?: KeyboardEvent): void {
+    this._map.zoomOut(e?.shiftKey ? 3 : 1);
+  }
+
+  private _zoomLevels(): number {
+    const zoomLevels = this._map.getMaxZoom() - this._map.getMinZoom() + 1;
+    return zoomLevels < Infinity ? zoomLevels : 0;
+  }
+
+  private _toZoomLevel(value: number): number {
+    return value + this._map.getMinZoom();
+  }
+
+  private _toValue(zoomLevel: number): number {
+    return zoomLevel - this._map.getMinZoom();
+  }
+
+  private _updateSize(): void {
+    const steps = this._zoomLevels();
+    this._ui.body.style.height = `${this.options.stepHeight * steps}px`;
+    this._knob.setSteps(steps);
+  }
+
+  private _updateMapZoom(): void {
+    this._map.setZoom(this._toZoomLevel(this._knob.getValue()));
+  }
+
+  private _updateKnobValue(): void {
+    this._knob.setValue(this._toValue(this._map.getZoom()));
+  }
+
+  private _updateDisabled(): void {
+    const zoomLevel = this._map.getZoom();
+    const className = `${this.options.styleNS}-disabled`;
+
+    DomUtil.removeClass(this._ui.zoomIn, className);
+    DomUtil.removeClass(this._ui.zoomOut, className);
+
+    if (zoomLevel === this._map.getMinZoom()) {
+      DomUtil.addClass(this._ui.zoomOut, className);
+    }
+    if (zoomLevel === this._map.getMaxZoom()) {
+      DomUtil.addClass(this._ui.zoomIn, className);
+    }
+  }
+}
+
+(L.Control as any).Zoomslider = ZoomsliderControl;
+
+L.control.zoomslider = function (options?: Control.ZoomOptions): ZoomsliderControl {
+  return new ZoomsliderControl(options);
+};
