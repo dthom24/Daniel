@@ -1,5 +1,6 @@
 // Converted Leaflet Zoomslider Plugin to TypeScript
-// Original plugin: https://github.com/kartena/leaflet.zoomslider 
+// Modified to add slider between + and - buttons
+// Original plugin: https://github.com/kartena/leaflet.zoomslider
 
 import L, { Control, Map, DomUtil, DomEvent, Draggable, Point } from 'leaflet';
 
@@ -94,16 +95,24 @@ export class ZoomsliderControl extends Control {
   private _createUI(): any {
     const ns = this.options.styleNS;
     const bar = DomUtil.create('div', `${ns} leaflet-bar`);
+    bar.style.display = 'flex';
+    bar.style.flexDirection = 'row';
+    bar.style.alignItems = 'center';
+    bar.style.gap = '12px'; // space between +, slider, and -
+
     const zoomIn = this._createZoomBtn('in', 'top', bar);
-    const wrap = DomUtil.create('div', `${ns}-wrap leaflet-bar-part`, bar);
+    const body = DomUtil.create('div', `${ns}-body`, bar);
+    const knob = DomUtil.create('div', `${ns}-knob`, body);
     const zoomOut = this._createZoomBtn('out', 'bottom', bar);
-    const body = DomUtil.create('div', `${ns}-body`, wrap);
-    const knob = DomUtil.create('div', `${ns}-knob`);
+
+    body.style.height = '100px'; // adjust height if needed
+    body.style.width = '6px';
+    body.style.position = 'relative';
 
     DomEvent.disableClickPropagation(bar);
     DomEvent.disableClickPropagation(knob);
 
-    return { bar, zoomIn, zoomOut, wrap, body, knob };
+    return { bar, zoomIn, zoomOut, body, knob };
   }
 
   private _createZoomBtn(zoomDir: string, end: string, container: HTMLElement): HTMLElement {
@@ -117,7 +126,6 @@ export class ZoomsliderControl extends Control {
 
   private _initKnob(): void {
     this._knob.enable();
-    this._ui.body.appendChild(this._ui.knob);
   }
 
   private _initEvents(): void {
